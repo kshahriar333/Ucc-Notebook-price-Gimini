@@ -37,7 +37,6 @@ from src.matcher import compare_acer_catalog
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 SEARCH_QUERY = os.getenv("SEARCH_QUERY", "").strip() or None
-ONLY_MATCHED = os.getenv("ONLY_MATCHED", "false").lower() == "true"
 
 
 def _format_specs_badge(specs) -> str:
@@ -94,7 +93,7 @@ async def send_report():
     tg_bot = Bot(token=BOT_TOKEN)
     data = fetch_all_stores(force_refresh=True)
     comparisons = compare_acer_catalog(
-        data, query=SEARCH_QUERY, only_matched=ONLY_MATCHED
+        data, query=SEARCH_QUERY, only_matched=False
     )
 
     if not comparisons:
