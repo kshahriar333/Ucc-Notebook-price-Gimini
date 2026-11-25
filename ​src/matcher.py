@@ -1,8 +1,10 @@
 from typing import Dict, List, Optional, Tuple
 from rapidfuzz import fuzz
 
-from src.config import MIN_MATCH_SCORE
 from src.spec_parser import LaptopSpecs
+
+# স্টোরভেদে টাইটেল ছোট-বড় হলেও যেন সঠিক স্পেক মিললে ম্যাচ হয়
+EFFECTIVE_MIN_SCORE = 62
 
 
 def compute_match_score(target: LaptopSpecs, candidate: LaptopSpecs) -> Tuple[float, str]:
@@ -14,7 +16,6 @@ def compute_match_score(target: LaptopSpecs, candidate: LaptopSpecs) -> Tuple[fl
     if target.sku and candidate.sku:
         if target.sku == candidate.sku:
             return 100.0, f"Exact SKU ({target.sku})"
-        # যদি দুটোই মডেল কোড হয় (UN./NX./NH. পার্ট নম্বর না হয়), তবে বেস চেসিস চেক করবে
         if not target.sku.startswith(("UN.", "NX.", "NH.")) and not candidate.sku.startswith(("UN.", "NX.", "NH.")):
             target_base = "-".join(target.sku.split("-")[:2])
             cand_base = "-".join(candidate.sku.split("-")[:2])
@@ -50,9 +51,9 @@ def compute_match_score(target: LaptopSpecs, candidate: LaptopSpecs) -> Tuple[fl
         else:
             score -= 10.0
 
-    # CPU exact match bonus (20 points)
+    # CPU exact match bonus (25 points)
     if target.cpu_model and candidate.cpu_model and target.cpu_model == candidate.cpu_model:
-        score += 20.0
+        score += 25.0
         reasons.append(target.cpu_model)
 
     # RAM & SSD exact match bonus (15 points)
@@ -68,12 +69,12 @@ def compute_match_score(target: LaptopSpecs, candidate: LaptopSpecs) -> Tuple[fl
         score += 10.0
         reasons.append(target.gpu)
 
-    # Partial SKU chassis bonus (10 points)
+    # Partial SKU chassis bonus (15 points)
     if target.sku and candidate.sku:
         t_parts = target.sku.split("-")
         c_parts = candidate.sku.split("-")
         if len(t_parts) >= 2 and len(c_parts) >= 2 and t_parts[:2] == c_parts[:2]:
-            score += 10.0
+            score += 15.0
             reasons.append(f"Chassis {'-'.join(t_parts[:2])}")
 
     final_score = min(100.0, max(0.0, score))
@@ -84,7 +85,7 @@ def compute_match_score(target: LaptopSpecs, candidate: LaptopSpecs) -> Tuple[fl
 def find_best_store_match(
     ucc_product: dict,
     store_products: List[dict],
-    min_score: int = MIN_MATCH_SCORE,
+    min_score: int = EFFECTIVE_MIN_SCORE,
 ) -> Optional[dict]:
     target_specs: LaptopSpecs = ucc_product["specs"]
     best_item = None
