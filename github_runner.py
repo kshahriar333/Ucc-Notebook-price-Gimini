@@ -36,7 +36,6 @@ from src.matcher import compare_acer_catalog
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-SEARCH_QUERY = os.getenv("SEARCH_QUERY", "").strip() or None
 
 
 def _format_specs_badge(specs) -> str:
@@ -92,14 +91,12 @@ async def send_report():
 
     tg_bot = Bot(token=BOT_TOKEN)
     data = fetch_all_stores(force_refresh=True)
-    comparisons = compare_acer_catalog(
-        data, query=SEARCH_QUERY, only_matched=False
-    )
+    comparisons = compare_acer_catalog(data, query=None, only_matched=False)
 
     if not comparisons:
         await tg_bot.send_message(
             chat_id=CHAT_ID,
-            text="❌ কোনো ম্যাচিং Acer ল্যাপটপ পাওয়া যায়নি।",
+            text="❌ কোনো Acer ল্যাপটপ পাওয়া যায়নি।",
         )
         return
 
