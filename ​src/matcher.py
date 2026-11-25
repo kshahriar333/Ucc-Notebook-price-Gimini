@@ -9,22 +9,17 @@ def compute_match_score(target: LaptopSpecs, candidate: LaptopSpecs) -> Tuple[fl
     """
     Computes a strict spec-aware similarity score (0 to 100) between a UCC laptop
     and a competitor laptop.
-
-    Hard Disqualifiers (prevents false matches):
-    - Different RAM capacity when both are known (e.g., 8GB != 16GB)
-    - Different SSD capacity when both are known (e.g., 512GB != 1TB)
-    - Different CPU model when both are known (e.g., i5-1235U != i5-1335U, Ryzen 5 != Ryzen 7)
-    - Different Dedicated GPU when both are known (e.g., RTX 3050 != RTX 4050)
     """
-    # 1. Exact SKU match (Highest priority)
+    # 1. Exact SKU / Part Number match
     if target.sku and candidate.sku:
         if target.sku == candidate.sku:
             return 100.0, f"Exact SKU ({target.sku})"
-        # Base chassis match check (e.g., AN515-58 vs AN515-58-57Y8)
-        target_base = "-".join(target.sku.split("-")[:2])
-        cand_base = "-".join(candidate.sku.split("-")[:2])
-        if len(target_base) >= 5 and target_base != cand_base:
-            return 0.0, "SKU Mismatch"
+        # যদি দুটোই মডেল কোড হয় (UN./NX./NH. পার্ট নম্বর না হয়), তবে বেস চেসিস চেক করবে
+        if not target.sku.startswith(("UN.", "NX.", "NH.")) and not candidate.sku.startswith(("UN.", "NX.", "NH.")):
+            target_base = "-".join(target.sku.split("-")[:2])
+            cand_base = "-".join(candidate.sku.split("-")[:2])
+            if len(target_base) >= 5 and target_base != cand_base:
+                return 0.0, "SKU Mismatch"
 
     # 2. Hard Disqualifiers on Core Hardware Specs
     if target.ram_gb and candidate.ram_gb and target.ram_gb != candidate.ram_gb:
@@ -141,7 +136,6 @@ def compare_acer_catalog(
         if only_matched and not has_any_match:
             continue
 
-        # Determine lowest available price across all 4 stores
         price_candidates = []
         if ucc["price_num"]:
             price_candidates.append(("UCC", ucc["price_num"]))
