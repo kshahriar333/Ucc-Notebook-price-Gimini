@@ -1,21 +1,39 @@
 import os
 import sys
 import glob
+import types
+import importlib.util
 import asyncio
 
-# রিপোজিটরির যেকোনো ফোল্ডারে scraper.py থাকলে তা অটোমেটিক খুঁজে বের করে path-এ যুক্ত করবে
 base_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, base_dir)
 
-for found_file in glob.glob(os.path.join(base_dir, "**", "scraper.py"), recursive=True):
-    folder_path = os.path.dirname(found_file)
-    if folder_path not in sys.path:
-        sys.path.insert(0, folder_path)
+# মেমোরিতে 'src' প্যাকেজ তৈরি করে সব ফাইল অটোমেটিক লোড করা হচ্ছে (ফোল্ডার নামে স্পেস থাকলেও কাজ করবে)
+src_pkg = types.ModuleType("src")
+src_pkg.__path__ = []
+sys.modules["src"] = src_pkg
+
+for py_file in glob.glob(os.path.join(base_dir, "**", "*.py"), recursive=True):
+    mod_name = os.path.splitext(os.path.basename(py_file))[0]
+    if mod_name in {"config", "spec_parser", "scraper", "matcher", "bot"}:
+        full_mod_name = f"src.{mod_name}"
+        spec = importlib.util.spec_from_file_location(full_mod_name, py_file)
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[full_mod_name] = module
+            setattr(src_pkg, mod_name, module)
+
+# সঠিক অর্ডারে মডিউলগুলো এক্সিকিউট করা
+for mod_name in ["config", "spec_parser", "scraper", "matcher", "bot"]:
+    full_mod_name = f"src.{mod_name}"
+    if full_mod_name in sys.modules:
+        mod = sys.modules[full_mod_name]
+        mod.__spec__.loader.exec_module(mod)
 
 from telegram import Bot
-import scraper
-import matcher
-import bot as bot_module
+from src.scraper import fetch_all_stores
+from src.matcher import compare_acer_catalog
+from src.bot import format_comparison_card
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -28,8 +46,8 @@ async def send_report():
         raise RuntimeError("TELEGRAM_BOT_TOKEN এবং TELEGRAM_CHAT_ID সেট করা আবশ্যক!")
 
     tg_bot = Bot(token=BOT_TOKEN)
-    data = scraper.fetch_all_stores(force_refresh=True)
-    comparisons = matcher.compare_acer_catalog(
+    data = fetch_all_stores(force_refresh=True)
+    comparisons = compare_acer_catalog(
         data, query=SEARCH_QUERY, only_matched=ONLY_MATCHED
     )
 
@@ -52,7 +70,7 @@ async def send_report():
     for idx in range(0, len(comparisons), chunk_size):
         chunk = comparisons[idx : idx + chunk_size]
         body = "\n\n────────────────────\n\n".join(
-            bot_module.format_comparison_card(c) for c in chunk
+            format_comparison_card(c) for c in chunk
         )
         await tg_bot.send_message(
             chat_id=CHAT_ID,
