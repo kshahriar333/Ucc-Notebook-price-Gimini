@@ -1,5 +1,10 @@
 import os
+import sys
 import asyncio
+
+# বর্তমান ফোল্ডারকে Python Path-এ যুক্ত করা হচ্ছে যাতে src মডিউল সহজেই পাওয়া যায়
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from telegram import Bot
 from src.scraper import fetch_all_stores
 from src.matcher import compare_acer_catalog
