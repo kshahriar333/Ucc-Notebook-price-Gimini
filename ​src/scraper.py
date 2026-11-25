@@ -3,7 +3,7 @@ import time
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional
-import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 
 from src.config import HEADERS, URLS, CACHE_TTL_SECONDS
@@ -11,39 +11,36 @@ from src.spec_parser import parse_laptop_specs, LaptopSpecs
 
 logger = logging.getLogger(__name__)
 
-_CACHE: Dict[str, object] = {
-    "timestamp": 0.0,
-    "data": None,
-}
+_CACHE: Dict[str, object] = {"timestamp": 0.0, "data": None}
+
+
+def _get_html(url: str) -> str:
+    scraper = cloudscraper.create_scraper(
+        browser={"browser": "chrome", "platform": "windows", "mobile": False}
+    )
+    res = scraper.get(url, headers=HEADERS, timeout=25)
+    res.raise_for_status()
+    return res.text
 
 
 def parse_price_value(price_text: str) -> Optional[int]:
-    """Extracts integer BDT price from text. Returns None if Out of Stock / TBA / Call."""
     if not price_text:
         return None
     lower = price_text.lower()
     if any(k in lower for k in ["out of stock", "upcoming", "tba", "call", "discontinued"]):
         return None
 
-    # Find numbers like 65,000 or 125000
     matches = re.findall(r"\d[\d,]{3,}", price_text)
-    if not matches:
-        return None
-
-    # Usually the first or lowest active price is the selling price
     values = []
     for m in matches:
         num = int(m.replace(",", ""))
-        if 15000 <= num <= 1000000:  # Valid laptop price range in BDT
+        if 15000 <= num <= 1000000:
             values.append(num)
-
     return values[0] if values else None
 
 
 def format_bdt(amount: Optional[int]) -> str:
-    if amount is None:
-        return "Out of Stock / TBA"
-    return f"৳{amount:,}"
+    return f"৳{amount:,}" if amount is not None else "Out of Stock / TBA"
 
 
 def _build_product(store: str, name: str, price_text: str, url: str) -> dict:
@@ -59,38 +56,40 @@ def _build_product(store: str, name: str, price_text: str, url: str) -> dict:
     }
 
 
+def _deduplicate(products: List[dict]) -> List[dict]:
+    seen = set()
+    unique = []
+    for p in products:
+        key = p["url"] or p["name"].lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(p)
+    return unique
+
+
 def scrape_ucc() -> List[dict]:
     products = []
     try:
-        res = requests.get(URLS["UCC"], headers=HEADERS, timeout=20)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, "lxml")
-
-        items = soup.select(".product-layout, .product-thumb")
-        for item in items:
+        soup = BeautifulSoup(_get_html(URLS["UCC"]), "lxml")
+        for item in soup.select(".product-layout, .product-thumb"):
             name_tag = item.select_one(".name a, h4 a, .caption a")
             if not name_tag:
                 continue
             name = name_tag.get_text(strip=True)
             if "acer" not in name.lower():
                 continue
-
             price_tag = item.select_one(".price-new, .price")
             price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
-            url = name_tag.get("href", "")
-            products.append(_build_product("UCC", name, price_text, url))
+            products.append(_build_product("UCC", name, price_text, name_tag.get("href", "")))
     except Exception as exc:
         logger.error("Failed scraping UCC: %s", exc)
-    return products
+    return _deduplicate(products)
 
 
 def scrape_startech() -> List[dict]:
     products = []
     try:
-        res = requests.get(URLS["StarTech"], headers=HEADERS, timeout=20)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, "lxml")
-
+        soup = BeautifulSoup(_get_html(URLS["StarTech"]), "lxml")
         for item in soup.select(".p-item"):
             name_tag = item.select_one(".p-item-name a")
             if not name_tag:
@@ -98,20 +97,16 @@ def scrape_startech() -> List[dict]:
             name = name_tag.get_text(strip=True)
             price_tag = item.select_one(".p-item-price span, .p-item-price")
             price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
-            url = name_tag.get("href", "")
-            products.append(_build_product("StarTech", name, price_text, url))
+            products.append(_build_product("StarTech", name, price_text, name_tag.get("href", "")))
     except Exception as exc:
         logger.error("Failed scraping StarTech: %s", exc)
-    return products
+    return _deduplicate(products)
 
 
 def scrape_ryans() -> List[dict]:
     products = []
     try:
-        res = requests.get(URLS["Ryans"], headers=HEADERS, timeout=20)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, "lxml")
-
+        soup = BeautifulSoup(_get_html(URLS["Ryans"]), "lxml")
         for item in soup.select(".category-single-product, .product-home-card"):
             name_tag = item.select_one(".card-title a, .product-title-grid a")
             if not name_tag:
@@ -119,20 +114,16 @@ def scrape_ryans() -> List[dict]:
             name = name_tag.get_text(strip=True)
             price_tag = item.select_one(".pr-text, .price")
             price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
-            url = name_tag.get("href", "")
-            products.append(_build_product("Ryans", name, price_text, url))
+            products.append(_build_product("Ryans", name, price_text, name_tag.get("href", "")))
     except Exception as exc:
         logger.error("Failed scraping Ryans: %s", exc)
-    return products
+    return _deduplicate(products)
 
 
 def scrape_techland() -> List[dict]:
     products = []
     try:
-        res = requests.get(URLS["Techland"], headers=HEADERS, timeout=20)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, "lxml")
-
+        soup = BeautifulSoup(_get_html(URLS["Techland"]), "lxml")
         for item in soup.select(".product-layout, .product-thumb"):
             name_tag = item.select_one(".name a, h4 a")
             if not name_tag:
@@ -140,15 +131,13 @@ def scrape_techland() -> List[dict]:
             name = name_tag.get_text(strip=True)
             price_tag = item.select_one(".price-new, .price")
             price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
-            url = name_tag.get("href", "")
-            products.append(_build_product("Techland", name, price_text, url))
+            products.append(_build_product("Techland", name, price_text, name_tag.get("href", "")))
     except Exception as exc:
         logger.error("Failed scraping Techland: %s", exc)
-    return products
+    return _deduplicate(products)
 
 
 def fetch_all_stores(force_refresh: bool = False) -> Dict[str, List[dict]]:
-    """Fetches products from all 4 stores concurrently with in-memory TTL caching."""
     now = time.time()
     if (
         not force_refresh
