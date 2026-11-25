@@ -17,12 +17,10 @@ class LaptopSpecs:
     extra_tokens: List[str] = field(default_factory=list)
 
 
-# Common Acer SKU / Part Number patterns
-# Examples: A315-59-562P, AN515-58-57Y8, ANV15-51-532J, SFG14-71-505P, PHN16-71-73LT, NX.K6TSI.002, NH.QM0SI.001
 SKU_PATTERNS = [
-    r"(?:NX|NH|UN)\.[A-Z0-9]{5}\.[A-Z0-9]{3}",  # Acer Part Number (NX.XXXXX.XXX)
-    r"(?:A[1357]|ANV?|SF[G357X]?|PHN?|PT[3579]?|TMP?|TMB?|EX[2]?|CB[357]?|SP[135]?)\d{2,3}-\d{2,3}[A-Z]?-[A-Z0-9]{3,5}",  # Full model e.g. ANV15-51-532J
-    r"(?:A[1357]|ANV?|SF[G357X]?|PHN?|PT[3579]?|TMP?|TMB?|EX[2]?|CB[357]?|SP[135]?)\d{2,3}-\d{2,3}[A-Z]?",  # Base chassis e.g. A315-59, AN515-58
+    r"\b(?:NX|NH|UN)\.[A-Z0-9]{5}\.[A-Z0-9]{3}\b",
+    r"\b(?:A[1357]|AS\d{2}|AL\d{2}|ANV?|SF[G357X]?|PHN?|PT[3579]?|TMP?|TMB?|EX[2]?|CB[357]?|SP[135]?)\d{0,3}-\d{2,3}[A-Z]?-[A-Z0-9]{2,5}\b",
+    r"\b(?:A[1357]|AS\d{2}|AL\d{2}|ANV?|SF[G357X]?|PHN?|PT[3579]?|TMP?|TMB?|EX[2]?|CB[357]?|SP[135]?)\d{0,3}-\d{2,3}[A-Z]?\b",
 ]
 
 SERIES_KEYWORDS = [
@@ -43,6 +41,7 @@ SERIES_KEYWORDS = [
     "aspire 3",
     "aspire 5",
     "aspire 7",
+    "aspire 15",
     "aspire",
     "extensa",
     "travelmate",
@@ -63,57 +62,47 @@ def extract_sku(text: str) -> Optional[str]:
 def extract_series(text: str) -> Optional[str]:
     lower_text = text.lower()
     for s in SERIES_KEYWORDS:
-        if re.search(r"" + re.escape(s) + r"", lower_text):
+        if re.search(r"\b" + re.escape(s) + r"\b", lower_text):
             return s.title()
     return None
 
 
 def extract_cpu(text: str) -> tuple[Optional[str], Optional[str]]:
-    """
-    Extracts normalized CPU brand & exact CPU model code.
-    Handles Intel Core i3/i5/i7/i9, Core Ultra 5/7/9, Intel N100/N200, Celeron,
-    and AMD Ryzen 3/5/7/9 (e.g., 7520U, 5500U, 7735HS, 8845HS).
-    """
     t = text.lower()
 
-    # Intel Core Ultra (e.g., Core Ultra 7 155H, Ultra 5 125H)
     ultra_match = re.search(r"ultra\s*([579])\s*(\d{3}[a-z]{1,2})?", t)
     if ultra_match:
         tier = ultra_match.group(1)
         code = ultra_match.group(2) or ""
-        return ("Intel", f"ultra-{tier}-{code}".strip("-").upper())
+        return ("Intel", f"ULTRA-{tier}-{code}".strip("-").upper())
 
-    # Intel Core i3/i5/i7/i9 (e.g., i5-1235U, i5 13420H, i7-13620H, Core 5 120U)
     intel_match = re.search(
-        r"(?:core\s*)?(i[3579]|core\s*[357])\s*[-\s]?\s*(\d{4,5}[a-z]{0,2})", t
+        r"(?:core\s*)?(i[3579]|core\s*[357])\s*[-\s]?\s*(\d{4,5}[a-z]{0,2})\b", t
     )
     if intel_match:
         tier = intel_match.group(1).replace(" ", "")
         code = intel_match.group(2).upper()
         return ("Intel", f"{tier}-{code}")
 
-    # Fallback Intel tier without exact model number (e.g., "12th Gen Core i5")
-    intel_tier_only = re.search(r"(i[3579])", t)
-    gen_match = re.search(r"(1[0-4])(?:th|nd|rd|st)\s*gen", t)
+    intel_tier_only = re.search(r"\b(i[3579])\b", t)
+    gen_match = re.search(r"\b(1[0-4])(?:th|nd|rd|st)\s*gen\b", t)
     if intel_tier_only:
         gen_str = f"{gen_match.group(1)}th" if gen_match else ""
         return ("Intel", f"{intel_tier_only.group(1)}-{gen_str}".strip("-"))
 
-    # Intel N-series / Celeron (e.g., N100, N200, N4500)
-    n_series = re.search(r"(?:celeron\s*)?(n\d{3,4})", t)
+    n_series = re.search(r"\b(?:celeron\s*)?(n\d{3,4})\b", t)
     if n_series:
         return ("Intel", n_series.group(1).upper())
 
-    # AMD Ryzen (e.g., Ryzen 5 7520U, Ryzen 7 7735HS, R5 5500U)
     ryzen_match = re.search(
-        r"(?:ryzen|r)\s*([3579])\s*[-\s]?\s*(\d{4}[a-z]{0,2})", t
+        r"(?:ryzen|r)\s*([3579])\s*[-\s]?\s*(\d{4}[a-z]{0,2})\b", t
     )
     if ryzen_match:
         tier = ryzen_match.group(1)
         code = ryzen_match.group(2).upper()
         return ("AMD", f"R{tier}-{code}")
 
-    ryzen_tier_only = re.search(r"ryzen\s*([3579])", t)
+    ryzen_tier_only = re.search(r"\bryzen\s*([3579])\b", t)
     if ryzen_tier_only:
         return ("AMD", f"R{ryzen_tier_only.group(1)}")
 
@@ -121,28 +110,21 @@ def extract_cpu(text: str) -> tuple[Optional[str], Optional[str]]:
 
 
 def extract_ram_gb(text: str) -> Optional[int]:
-    """
-    Extracts RAM size in GB (e.g., 8GB RAM, 16GB DDR5, 8GB/512GB).
-    Valid RAM sizes: 4, 8, 12, 16, 24, 32, 64.
-    """
     t = text.lower()
     valid_rams = {4, 8, 12, 16, 24, 32, 64}
 
-    # Explicit RAM mention: "16GB RAM", "8GB DDR4", "16 GB LPDDR5"
     explicit = re.search(
-        r"(4|8|12|16|24|32|64)\s*gb\s*(?:ddr[45]|lpddr[45]x?|ram)", t
+        r"\b(4|8|12|16|24|32|64)\s*gb\s*(?:\([^)]*\)\s*)?(?:ddr[45]|lpddr[45]x?|ram)\b", t
     )
     if explicit:
         return int(explicit.group(1))
 
-    # Slash notation: "8GB/512GB" or "16/512GB"
-    slash = re.search(r"(4|8|12|16|24|32|64)\s*(?:gb)?\s*/\s*(?:128|256|512|1024|1|2)\s*(?:gb|tb)", t)
+    slash = re.search(r"\b(4|8|12|16|24|32|64)\s*(?:gb)?\s*/\s*(?:128|256|512|1024|1|2)\s*(?:gb|tb)\b", t)
     if slash:
         return int(slash.group(1))
 
-    # General standalone GB values matching standard RAM sizes (excluding VRAM like RTX 4060 8GB)
     cleaned = re.sub(r"(?:rtx|gtx|rx|vram|graphics)\s*\d{3,4}\s*\d*\s*gb", "", t)
-    for m in re.finditer(r"(\d{1,2})\s*gb", cleaned):
+    for m in re.finditer(r"\b(\d{1,2})\s*gb\b", cleaned):
         val = int(m.group(1))
         if val in valid_rams:
             return val
@@ -151,19 +133,13 @@ def extract_ram_gb(text: str) -> Optional[int]:
 
 
 def extract_ssd_gb(text: str) -> Optional[int]:
-    """
-    Extracts storage size normalized to GB (e.g., 512GB -> 512, 1TB -> 1024, 2TB -> 2048).
-    """
     t = text.lower()
-
-    # Check TB first (1TB, 2TB)
-    tb_match = re.search(r"([12])\s*tb", t)
+    tb_match = re.search(r"\b([12])\s*tb\b", t)
     if tb_match:
         return int(tb_match.group(1)) * 1024
 
-    # Check GB SSD / NVMe / Storage
     valid_ssds = {128, 256, 512, 1024}
-    for m in re.finditer(r"(128|256|512|1024)\s*gb", t):
+    for m in re.finditer(r"\b(128|256|512|1024)\s*gb\b", t):
         val = int(m.group(1))
         if val in valid_ssds:
             return val
@@ -172,9 +148,8 @@ def extract_ssd_gb(text: str) -> Optional[int]:
 
 
 def extract_gpu(text: str) -> Optional[str]:
-    """Extracts dedicated GPU model if present (e.g., RTX 4050, RTX 3050, GTX 1650)."""
     t = text.lower()
-    gpu_match = re.search(r"(rtx|gtx|rx)\s*(\d{4})\s*(ti|super)?", t)
+    gpu_match = re.search(r"\b(rtx|gtx|rx)\s*(\d{4})\s*(ti|super)?\b", t)
     if gpu_match:
         prefix = gpu_match.group(1).upper()
         num = gpu_match.group(2)
@@ -187,21 +162,14 @@ def parse_laptop_specs(name: str) -> LaptopSpecs:
     normalized = re.sub(r"[^a-z0-9\s\-\.]", " ", name.lower())
     normalized = re.sub(r"\s+", " ", normalized).strip()
 
-    sku = extract_sku(name)
-    series = extract_series(name)
-    cpu_brand, cpu_model = extract_cpu(name)
-    ram_gb = extract_ram_gb(name)
-    ssd_gb = extract_ssd_gb(name)
-    gpu = extract_gpu(name)
-
     return LaptopSpecs(
         raw_name=name.strip(),
         normalized_name=normalized,
-        sku=sku,
-        series=series,
-        cpu_brand=cpu_brand,
-        cpu_model=cpu_model,
-        ram_gb=ram_gb,
-        ssd_gb=ssd_gb,
-        gpu=gpu,
+        sku=extract_sku(name),
+        series=extract_series(name),
+        cpu_brand=extract_cpu(name)[0],
+        cpu_model=extract_cpu(name)[1],
+        ram_gb=extract_ram_gb(name),
+        ssd_gb=extract_ssd_gb(name),
+        gpu=extract_gpu(name),
     )
