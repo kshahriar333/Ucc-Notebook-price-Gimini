@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 import cloudscraper
 from bs4 import BeautifulSoup
 
-from src.config import HEADERS, URLS, CACHE_TTL_SECONDS
+from src.config import HEADERS, CACHE_TTL_SECONDS
 from src.spec_parser import parse_laptop_specs, LaptopSpecs
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ def _get_html(url: str) -> str:
     scraper = cloudscraper.create_scraper(
         browser={"browser": "chrome", "platform": "windows", "mobile": False}
     )
-    res = scraper.get(url, headers=HEADERS, timeout=25)
+    res = scraper.get(url, headers=HEADERS, timeout=30)
     res.raise_for_status()
     return res.text
 
@@ -69,72 +69,138 @@ def _deduplicate(products: List[dict]) -> List[dict]:
 
 def scrape_ucc() -> List[dict]:
     products = []
-    try:
-        soup = BeautifulSoup(_get_html(URLS["UCC"]), "lxml")
-        for item in soup.select(".product-layout, .product-thumb"):
-            name_tag = item.select_one(".name a, h4 a, .caption a")
-            if not name_tag:
-                continue
-            name = name_tag.get_text(strip=True)
-            if "acer" not in name.lower():
-                continue
-            price_tag = item.select_one(".price-new, .price")
-            price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
-            products.append(_build_product("UCC", name, price_text, name_tag.get("href", "")))
-    except Exception as exc:
-        logger.error("Failed scraping UCC: %s", exc)
-    return _deduplicate(products)
+    for page in range(1, 6):
+        url = f"https://www.ucc.com.bd/acer-brand-laptops?limit=100&page={page}"
+        try:
+            soup = BeautifulSoup(_get_html(url), "lxml")
+            items = soup.select(".product-layout, .product-thumb")
+            if not items:
+                break
+            before_count = len(products)
+            for item in items:
+                name_tag = item.select_one(".name a, h4 a, .caption a")
+                if not name_tag:
+                    continue
+                name = name_tag.get_text(strip=True)
+                if "acer" not in name.lower():
+                    continue
+                price_tag = item.select_one(".price-new, .price")
+                price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
+                products.append(_build_product("UCC", name, price_text, name_tag.get("href", "")))
+            products = _deduplicate(products)
+            if len(products) == before_count:
+                break
+        except Exception as exc:
+            logger.error("Failed scraping UCC page %s: %s", page, exc)
+            break
+    return products
 
 
 def scrape_startech() -> List[dict]:
     products = []
-    try:
-        soup = BeautifulSoup(_get_html(URLS["StarTech"]), "lxml")
-        for item in soup.select(".p-item"):
-            name_tag = item.select_one(".p-item-name a")
-            if not name_tag:
-                continue
-            name = name_tag.get_text(strip=True)
-            price_tag = item.select_one(".p-item-price span, .p-item-price")
-            price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
-            products.append(_build_product("StarTech", name, price_text, name_tag.get("href", "")))
-    except Exception as exc:
-        logger.error("Failed scraping StarTech: %s", exc)
-    return _deduplicate(products)
+    for page in range(1, 6):
+        url = f"https://www.startech.com.bd/acer-laptop?limit=90&page={page}"
+        try:
+            soup = BeautifulSoup(_get_html(url), "lxml")
+            items = soup.select(".p-item")
+            if not items:
+                break
+            before_count = len(products)
+            for item in items:
+                name_tag = item.select_one(".p-item-name a")
+                if not name_tag:
+                    continue
+                name = name_tag.get_text(strip=True)
+                if "acer" not in name.lower():
+                    continue
+                price_tag = item.select_one(".p-item-price span, .p-item-price")
+                price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
+                products.append(_build_product("StarTech", name, price_text, name_tag.get("href", "")))
+            products = _deduplicate(products)
+            if len(products) == before_count:
+                break
+        except Exception as exc:
+            logger.error("Failed scraping StarTech page %s: %s", page, exc)
+            break
+    return products
 
 
 def scrape_ryans() -> List[dict]:
     products = []
-    try:
-        soup = BeautifulSoup(_get_html(URLS["Ryans"]), "lxml")
-        for item in soup.select(".category-single-product, .product-home-card"):
-            name_tag = item.select_one(".card-title a, .product-title-grid a")
-            if not name_tag:
-                continue
-            name = name_tag.get_text(strip=True)
-            price_tag = item.select_one(".pr-text, .price")
-            price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
-            products.append(_build_product("Ryans", name, price_text, name_tag.get("href", "")))
-    except Exception as exc:
-        logger.error("Failed scraping Ryans: %s", exc)
-    return _deduplicate(products)
+    urls_to_try = [
+        "https://www.ryans.com/category/all-laptop-acer?limit=100&page={page}",
+        "https://www.ryans.com/category/laptop-all-laptop?limit=100&brand=acer&page={page}",
+    ]
+    for base_url in urls_to_try:
+        for page in range(1, 6):
+            url = base_url.format(page=page)
+            try:
+                soup = BeautifulSoup(_get_html(url), "lxml")
+                items = soup.select(".category-single-product, .product-home-card, .card-body")
+                if not items:
+                    break
+                before_count = len(products)
+                for item in items:
+                    name_tag = item.select_one(".card-title a, .product-title-grid a, a.product-title")
+                    if not name_tag:
+                        continue
+                    name = name_tag.get_text(strip=True)
+                    if "acer" not in name.lower():
+                        continue
+                    price_tag = item.select_one(".pr-text, .price, .tk")
+                    price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
+                    href = name_tag.get("href", "")
+                    if href.startswith("/"):
+                        href = "https://www.ryans.com" + href
+                    products.append(_build_product("Ryans", name, price_text, href))
+                products = _deduplicate(products)
+                if len(products) == before_count:
+                    break
+            except Exception as exc:
+                logger.error("Failed scraping Ryans page %s: %s", page, exc)
+                break
+        if products:
+            break
+    return products
 
 
 def scrape_techland() -> List[dict]:
     products = []
-    try:
-        soup = BeautifulSoup(_get_html(URLS["Techland"]), "lxml")
-        for item in soup.select(".product-layout, .product-thumb"):
-            name_tag = item.select_one(".name a, h4 a")
-            if not name_tag:
-                continue
-            name = name_tag.get_text(strip=True)
-            price_tag = item.select_one(".price-new, .price")
-            price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
-            products.append(_build_product("Techland", name, price_text, name_tag.get("href", "")))
-    except Exception as exc:
-        logger.error("Failed scraping Techland: %s", exc)
-    return _deduplicate(products)
+    urls_to_try = [
+        "https://www.techlandbd.com/shop-laptop-computer/brand-laptops/shop-acer-laptop?limit=100&page={page}",
+        "https://www.techlandbd.com/acer-laptop?limit=100&page={page}",
+    ]
+    for base_url in urls_to_try:
+        for page in range(1, 6):
+            url = base_url.format(page=page)
+            try:
+                soup = BeautifulSoup(_get_html(url), "lxml")
+                items = soup.select(".product-layout, .product-thumb, .product-grid, .single-product")
+                if not items:
+                    break
+                before_count = len(products)
+                for item in items:
+                    name_tag = item.select_one(".name a, h4 a, .product-title a, a[href*='acer']")
+                    if not name_tag:
+                        continue
+                    name = name_tag.get_text(strip=True)
+                    if "acer" not in name.lower() or len(name) < 10:
+                        continue
+                    price_tag = item.select_one(".price-new, .price, .special-price")
+                    price_text = price_tag.get_text(" ", strip=True) if price_tag else ""
+                    href = name_tag.get("href", "")
+                    if href.startswith("/"):
+                        href = "https://www.techlandbd.com" + href
+                    products.append(_build_product("Techland", name, price_text, href))
+                products = _deduplicate(products)
+                if len(products) == before_count:
+                    break
+            except Exception as exc:
+                logger.error("Failed scraping Techland page %s: %s", page, exc)
+                break
+        if products:
+            break
+    return products
 
 
 def fetch_all_stores(force_refresh: bool = False) -> Dict[str, List[dict]]:
