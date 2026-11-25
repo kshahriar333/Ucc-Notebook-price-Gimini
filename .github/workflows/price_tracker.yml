@@ -1,15 +1,8 @@
 name: Acer Laptop Price Tracker
 
 on:
-  # ম্যানুয়ালি রান করার জন্য (Actions ট্যাব থেকে)
   workflow_dispatch:
-    inputs:
-      search_query:
-        description: 'নির্দিষ্ট মডেল খুঁজতে লিখুন (খালি রাখলে সব দেখাবে, যেমন: Nitro বা A315-59)'
-        required: false
-        default: ''
 
-  # প্রতিদিন সকাল ১০টা এবং রাত ১০টায় (বাংলাদেশ সময়) অটোমেটিক চলবে
   schedule:
     - cron: '0 4,16 * * *'
 
@@ -35,5 +28,4 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          SEARCH_QUERY: ${{ github.event.inputs.search_query }}
         run: python github_runner.py
